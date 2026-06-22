@@ -1,25 +1,45 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getServerRuntime } from "@/server/runtime";
+import { XlsxExporter } from "@/server/exports/xlsxExporter";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ jobId: string }> },
 ) {
-  const { jobId } = await params;
-  const { queue } = await getServerRuntime();
+  try {
+    const { jobId } = await params;
+    const { repository } = await getServerRuntime();
 
-  const job = queue.getById(jobId);
+    const record = await repository.findById(jobId);
 
-  if (!job) {
-    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    if (!record) {
+      return new Response(JSON.stringify({ error: "Screenshot record not found" }), {
+        status: 404,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    const exporter = new XlsxExporter();
+    const buffer = await exporter.export([record]);
+
+    return new Response(buffer, {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="screenshot-${jobId}.xlsx"`,
+      },
+    });
+  } catch (error) {
+    console.error("[GET /api/screenshots/[jobId]/export/xlsx]", error);
+
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
   }
-
-  return NextResponse.json({
-    jobId: job.id,
-    status: job.status,
-    stage: job.stage,
-    error: job.error ?? null,
-    createdAt: job.createdAt,
-    updatedAt: job.updatedAt,
-  });
 }
